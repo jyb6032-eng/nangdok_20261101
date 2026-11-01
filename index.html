@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>낭독 연습</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0;
+      font-family: 'Pretendard', -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+  body { background: #f0f7ff; color: #1e293b; padding: 16px; display: flex; justify-content: center; }
+  .wrap { width: 100%; max-width: 720px; }
+  h1 { text-align: center; font-size: 32px; color: #1e3a8a; margin: 6px 0 16px; }
+  .card { background: #fff; border-radius: 20px; padding: 22px; margin-bottom: 16px;
+          box-shadow: 0 6px 18px rgba(0,0,0,.06); border: 3px solid #dbeafe; text-align: center; }
+  .step { font-size: 22px; font-weight: 800; color: #1e3a8a; margin-bottom: 14px; }
+  .hidden { display: none !important; }
+  button { cursor: pointer; border: none; border-radius: 16px; font-weight: 800; transition: .15s; }
+  button:active { transform: scale(.96); }
+  button:disabled { background: #cbd5e1 !important; color: #94a3b8 !important; }
+
+  .nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (min-width: 560px) { .nums { grid-template-columns: repeat(6, 1fr); } }
+  .num { font-size: 28px; padding: 18px 0; background: #e0e7ff; color: #3730a3; }
+
+  .me { font-size: 22px; font-weight: 800; color: #4338ca; margin-bottom: 10px; }
+  .sentences { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+  .sent-btn { font-size: 22px; padding: 16px 18px; background: #f8fafc; border: 3px solid #e2e8f0; color: #1e293b; text-align: left; line-height: 1.5; }
+  .sent-btn.on { border-color: #2563eb; background: #eff6ff; }
+  .big { font-size: 30px; font-weight: 800; line-height: 1.7; background: #eff6ff; border-radius: 16px; padding: 18px; word-break: keep-all; }
+  .gray { background: #f1f5f9; color: #475569; font-size: 18px; padding: 12px 18px; margin-top: 12px; }
+
+  .rec { width: 130px; height: 130px; border-radius: 50%; font-size: 52px; background: #ef4444; color: #fff; margin: 6px auto;
+         display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(239,68,68,.35); }
+  .rec.on { background: #1e293b; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(239,68,68,0); } }
+  .status { font-size: 19px; font-weight: 700; margin: 8px 0; }
+  audio { width: 100%; margin-top: 8px; }
+  .submit { width: 100%; font-size: 26px; padding: 20px; background: #16a34a; color: #fff; margin-top: 14px; }
+  .done-emoji { font-size: 90px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎙️ 낭독 연습</h1>
+
+  <!-- 1. 번호 고르기 -->
+  <div id="s1" class="card">
+    <div class="step">1. 내 번호를 눌러요</div>
+    <div id="nums" class="nums"></div>
+  </div>
+
+  <!-- 2. 문장 고르기 -->
+  <div id="s2" class="card hidden">
+    <div class="me" id="me1"></div>
+    <div class="step">2. 읽을 문장을 골라요</div>
+    <div id="sentences" class="sentences"><p>문장을 불러오는 중...</p></div>
+    <button class="gray" onclick="go('s1')">← 번호 다시 고르기</button>
+  </div>
+
+  <!-- 3. 녹음 -->
+  <div id="s3" class="card hidden">
+    <div class="me" id="me2"></div>
+    <div class="step">3. 큰 소리로 읽고 녹음해요</div>
+    <div id="big" class="big"></div>
+    <button class="gray" onclick="speak()">🔊 먼저 들어보기</button>
+    <div style="height:14px;"></div>
+    <button id="recBtn" class="rec" onclick="toggleRec()">🎤</button>
+    <div id="status" class="status">빨간 버튼을 누르고 읽어요!</div>
+    <audio id="player" controls class="hidden"></audio>
+    <button id="submitBtn" class="submit hidden" onclick="submit()">📮 선생님께 보내기</button>
+    <button class="gray" onclick="go('s2')">← 문장 다시 고르기</button>
+  </div>
+
+  <!-- 4. 완료 -->
+  <div id="s4" class="card hidden">
+    <div class="done-emoji">🎉</div>
+    <div class="step" style="margin-top:10px;">잘했어요! 선생님께 보냈어요</div>
+    <button class="gray" style="font-size:22px; padding:16px 24px;" onclick="reset()">🙋 다음 친구 차례</button>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// ⬇️ 앱스스크립트 '웹 앱' 배포 주소를 아래 따옴표 안에 붙여넣어 주세요
+// (API 키가 아니라 주소예요. 키는 구글 시트 안에만 있어요)
+// =====================================================================
+const SCRIPT_URL = "여기에_웹앱_주소_붙여넣기";
+
+const NUMS = [1,2,3,4,5,6,7,8,9,10,11,12,21,22,23,24,25,26,27,28,29,30];
+const $ = id => document.getElementById(id);
+let myNum = null, mySentence = "", sentences = [];
+let recorder = null, chunks = [], wavB64 = null, duration = 0, autoStop = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function go(id) { ["s1","s2","s3","s4"].forEach(s => $(s).classList.toggle("hidden", s !== id)); window.scrollTo(0, 0); }
+
+// 1. 번호
+$("nums").innerHTML = NUMS.map(n => `<button class="num" onclick="pickNum(${n})">${n}</button>`).join("");
+function pickNum(n) {
+  myNum = n;
+  $("me1").textContent = $("me2").textContent = `🙂 ${n}번`;
+  go("s2");
+}
+
+// 2. 문장 (선생님이 시트 '문장' 탭에 적은 것)
+async function loadSentences() {
+  try {
+    const res = await fetch(SCRIPT_URL);
+    const j = await res.json();
+    sentences = j.sentences || [];
+  } catch (e) {
+    $("sentences").innerHTML = `<p style="color:#dc2626;">문장을 불러오지 못했어요. 선생님께 알려 주세요.</p>`;
+    return;
+  }
+  $("sentences").innerHTML = sentences.map((s, i) =>
+    `<button class="sent-btn" onclick="pickSentence(${i})">${i + 1}. ${esc(s)}</button>`).join("")
+    || `<p>선생님이 아직 문장을 넣지 않았어요.</p>`;
+}
+function pickSentence(i) {
+  mySentence = sentences[i];
+  $("big").textContent = mySentence;
+  clearRecording();
+  go("s3");
+}
+function speak() {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(mySentence); u.lang = "ko-KR"; u.rate = 0.85;
+  speechSynthesis.speak(u);
+}
+
+// 3. 녹음 (최대 60초)
+function clearRecording() {
+  wavB64 = null; $("player").classList.add("hidden"); $("submitBtn").classList.add("hidden");
+  $("status").textContent = "빨간 버튼을 누르고 읽어요!";
+}
+async function toggleRec() {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+    recorder.onstop = async () => {
+      clearTimeout(autoStop);
+      stream.getTracks().forEach(t => t.stop());
+      $("recBtn").classList.remove("on"); $("recBtn").textContent = "🎤";
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      $("player").src = URL.createObjectURL(blob); $("player").classList.remove("hidden");
+      $("status").textContent = "⏳ 잠깐만요...";
+      try {
+        const out = await toWav16k(blob);
+        wavB64 = out.b64; duration = out.dur;
+        $("status").textContent = "✅ 다 됐어요! ▶ 눌러서 들어 보고, 괜찮으면 보내요";
+        $("submitBtn").classList.remove("hidden");
+      } catch (e) {
+        $("status").textContent = "❌ 다시 녹음해 주세요.";
+      }
+    };
+    recorder.start();
+    autoStop = setTimeout(() => recorder.state === "recording" && recorder.stop(), 60000);
+    $("recBtn").classList.add("on"); $("recBtn").textContent = "⏹";
+    $("status").textContent = "🔴 녹음 중... 다 읽으면 다시 눌러요";
+    $("submitBtn").classList.add("hidden");
+  } catch (e) {
+    $("status").textContent = "❌ 마이크를 쓸 수 없어요. 선생님께 알려 주세요.";
+  }
+}
+async function toWav16k(blob) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const dec = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close();
+  const rate = 16000;
+  const off = new OfflineAudioContext(1, Math.ceil(dec.duration * rate), rate);
+  const src = off.createBufferSource(); src.buffer = dec; src.connect(off.destination); src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const v = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0,"RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8,"WAVE"); w(12,"fmt ");
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,rate,true);
+  v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,"data"); v.setUint32(40,pcm.length*2,true);
+  for (let i = 0; i < pcm.length; i++) { const s = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(44 + i*2, s < 0 ? s*0x8000 : s*0x7fff, true); }
+  const b = new Uint8Array(v.buffer); let bin = "";
+  for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return { b64: btoa(bin), dur: dec.duration };
+}
+
+// 보내기
+async function submit() {
+  if (!wavB64) return;
+  $("submitBtn").disabled = true;
+  $("status").textContent = "📮 보내는 중...";
+  try {
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",   // 헤더를 따로 안 붙여야 구글 앱스스크립트가 잘 받아요
+      body: JSON.stringify({ num: myNum, sentence: mySentence, duration: duration, audio: wavB64 })
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error);
+    go("s4");
+  } catch (e) {
+    $("status").textContent = "❌ 보내지 못했어요. 한 번 더 눌러 주세요.";
+  } finally {
+    $("submitBtn").disabled = false;
+  }
+}
+
+function reset() { myNum = null; mySentence = ""; clearRecording(); go("s1"); }
+
+loadSentences();
+</script>
+</body>
+</html>
